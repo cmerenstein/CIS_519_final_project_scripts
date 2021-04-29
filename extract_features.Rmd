@@ -1,0 +1,141 @@
+---
+title: "Extract features for CART4 + PT1Y9 datasets"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r, warning=F, message=F}
+library(Seurat)
+library(tidyverse)
+library(matrixStats)
+theme_set(theme_bw())
+```
+
+# Import CART4 dataset
+
+```{r}
+data.dir <- "CART4/filtered_feature_bc_matrix/"
+list.files(data.dir) # Should show barcodes.tsv.gz, features.tsv.gz, and matrix.mtx.gz
+data <- Read10X(data.dir)
+sobj <-  CreateSeuratObject(counts = data$`Gene Expression`)
+sobj[['Protein']] <- CreateAssayObject(counts = data$`Antibody Capture`)
+```
+
+```{r}
+sobj@assays
+```
+
+For CART4 dataset:
+
+* 4807 cells, 33.5k genes, 7 proteins
+* Output should have 4807 cells
+
+# Extract features
+
+Define `nProtein` as the number of protein features (e.g. 7). Define `nRNA` as the number of gene features (e.g. 33.5k).
+
+* `nCount_Protein`: sum of protein counts
+* `nFeature_Protein`: number of non-zero gene counts
+* `percFeature_Protein`: `nFeature_Protein` / `nProtein` 
+* `average_Protein`: mean of protein counts 
+* `median_Protein`: median of protein counts 
+* `variance_Protein`: variance of protein counts 
+* `nCount_RNA`: sum of gene counts
+* `nFeature_RNA`: number of non-zero gene counts
+* `percFeature_RNA`: `nFeature_RNA` / `nRNA` 
+* `average_RNA`: mean of gene counts 
+
+```{r}
+out.df <- sobj@meta.data %>% select(-orig.ident)
+
+# remove sparsity to do calculations
+protein_matrix <- as.matrix(sobj@assays$Protein@counts)
+RNA_matrix <- as.matrix(sobj@assays$RNA@counts)
+
+# store number of protein and gene features
+nProtein <- dim(protein_matrix)[1]
+nRNA <- dim(RNA_matrix)[1]
+
+out.df <- out.df %>% mutate(
+  percFeature_Protein = nFeature_Protein / nProtein,
+  average_Protein = colMeans(protein_matrix),
+  median_Protein = colMedians(protein_matrix),
+  variance_Protein= colVars(protein_matrix),
+  percFeature_RNA= nFeature_Protein / nRNA,
+  average_RNA= colMeans(RNA_matrix)
+)
+```
+
+# Write ouput
+
+```{r}
+# out.df %>% rownames_to_column("cell_ID") %>%
+#   write.table("2021-04-13_CART4_features_4807x10.txt", sep="\t", quote=F, row.names=F)
+```
+
+# Examine distributions of extracted features
+
+```{r}
+# pdf("2021-04-13_CART4_extracted_features_histogram.pdf", width=10, height=5)
+pivot_longer(out.df, everything(), names_to="feature") %>%
+  ggplot(aes(value)) + geom_histogram(bins=50) +
+  theme(axis.text.x = element_text(angle=45)) +
+  facet_wrap(~feature, ncol=5, scales="free")
+# dev.off()
+```
+
+
+Other potential features that we could implement:
+
+* Avg distance to nearest 1, 5, 10, 15… RNA neighbors 
+* Avg distance to nearest 1, 5, 10, 15… protein neighbors 
+* Cluster identity
+
+# Repeat for PT1Y9 dataset
+
+```{r}
+sobj2 <- readRDS("PT1Y9_import.RDS")
+sobj2@assays
+```
+
+* 3072 cells x 16k genes and 21 proteins
+
+```{r}
+out.df2 <- sobj2@meta.data %>% dplyr::select(-orig.ident)
+
+# remove sparsity to do calculations
+protein_matrix <- as.matrix(sobj2@assays$ADT@counts)
+RNA_matrix <- as.matrix(sobj2@assays$RNA@counts)
+
+# store number of protein and gene features
+nProtein <- dim(protein_matrix)[1]
+nRNA <- dim(RNA_matrix)[1]
+
+out.df2 <- out.df2 %>% mutate(
+  nCount_Protein = nCount_ADT,
+  nFeature_Protein = nFeature_ADT,
+  percFeature_Protein = nFeature_ADT / nProtein,
+  average_Protein = colMeans(protein_matrix),
+  median_Protein = colMedians(protein_matrix),
+  variance_Protein= colVars(protein_matrix),
+  percFeature_RNA= nFeature_ADT / nRNA,
+  average_RNA= colMeans(RNA_matrix)
+)
+
+out.df2 <- out.df2 %>% dplyr::select(-contains("ADT")) %>%
+  dplyr::select(-percent.mt)
+
+# out.df2 %>% rownames_to_column("cell_ID") %>%
+#   write.table("2021-04-14_PT1Y9_features_3072x10.txt", sep="\t", quote=F, row.names=F)
+```
+
+```{r}
+# pdf("2021-04-14_PT1Y9_extracted_features_histogram.pdf", width=10, height=5)
+pivot_longer(out.df2, everything(), names_to="feature") %>%
+  ggplot(aes(value)) + geom_histogram(bins=50) +
+  theme(axis.text.x = element_text(angle=45)) +
+  facet_wrap(~feature, ncol=5, scales="free")
+# dev.off()
+```
+
